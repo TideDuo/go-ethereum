@@ -43,7 +43,8 @@ const (
 
 	// txChanSize is the size of channel listening to NewTxsEvent.
 	// The number is referenced from the size of tx pool.
-	txChanSize = 4096
+	// txChanSize = 4096
+	txChanSize = 4096000
 
 	// chainHeadChanSize is the size of channel listening to ChainHeadEvent.
 	chainHeadChanSize = 10
@@ -396,6 +397,7 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 			commit(false, commitInterruptNewHead)
 
 		case head := <-w.chainHeadCh:
+			log.Info("receive new block+++++++++++++", "number", head.Block.NumberU64())
 			clearPending(head.Block.NumberU64())
 			timestamp = time.Now().Unix()
 			commit(false, commitInterruptNewHead)
@@ -609,6 +611,7 @@ func (w *worker) taskLoop() {
 // resultLoop is a standalone goroutine to handle sealing result submitting
 // and flush relative data to the database.
 func (w *worker) resultLoop() {
+	count := 0
 	defer w.wg.Done()
 	for {
 		select {
@@ -667,11 +670,18 @@ func (w *worker) resultLoop() {
 			log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash,
 				"elapsed", common.PrettyDuration(time.Since(task.createdAt)))
 
-			// Broadcast the block and announce chain insertion event
-			w.mux.Post(core.NewMinedBlockEvent{Block: block})
+			// networkLatency := time.Duration(rand.Int63n(2e9))
+			// time.Sleep(networkLatency)
+			// log.Info("networkLatency", "--------------networkLatency---------------", networkLatency)
 
+			// Broadcast the block and announce chain insertion event
+			// t := time.Now()
+			w.mux.Post(core.NewMinedBlockEvent{Block: block})
+			log.Info("broadcast start------------", "number", block.Number())
+
+			count++
 			// Insert the block into the set of pending ones to resultLoop for confirmations
-			w.unconfirmed.Insert(block.NumberU64(), block.Hash())
+			w.unconfirmed.Insert(block.NumberU64(), block.Hash(), count)
 
 		case <-w.exitCh:
 			return
@@ -773,11 +783,13 @@ func (w *worker) updateSnapshot() {
 func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Address) ([]*types.Log, error) {
 	snap := w.current.state.Snapshot()
 
+	// t := time.Now()
 	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, w.current.gasPool, w.current.state, w.current.header, tx, &w.current.header.GasUsed, *w.chain.GetVMConfig())
 	if err != nil {
 		w.current.state.RevertToSnapshot(snap)
 		return nil, err
 	}
+	// log.Info("tx execution time", "--------------tx execution time---------------", time.Since(t))
 	w.current.txs = append(w.current.txs, tx)
 	w.current.receipts = append(w.current.receipts, receipt)
 
@@ -905,6 +917,7 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 
 // commitNewWork generates several new sealing tasks based on the parent block.
 func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) {
+	// t := time.Now()
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -1027,6 +1040,7 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 		}
 	}
 	w.commit(uncles, w.fullTaskHook, true, tstart)
+	// log.Info("Packing blocks use", "1111111111111111111111111", time.Since(t))
 }
 
 // commit runs any post-transaction state modifications, assembles the final block
@@ -1035,10 +1049,12 @@ func (w *worker) commit(uncles []*types.Header, interval func(), update bool, st
 	// Deep copy receipts here to avoid interaction between different tasks.
 	receipts := copyReceipts(w.current.receipts)
 	s := w.current.state.Copy()
+	t := time.Now()
 	block, err := w.engine.FinalizeAndAssemble(w.chain, w.current.header, s, w.current.txs, uncles, receipts)
 	if err != nil {
 		return err
 	}
+	log.Info("Packing blocks use", "number", block.NumberU64(), "--1111111111111111111111111--", time.Since(t))
 	if w.isRunning() {
 		if interval != nil {
 			interval()
@@ -1063,6 +1079,7 @@ func (w *worker) commit(uncles []*types.Header, interval func(), update bool, st
 	if update {
 		w.updateSnapshot()
 	}
+	log.Info("Packing blocks use", "number", block.NumberU64(), "++1111111111111111111111111++", time.Since(start))
 	return nil
 }
 

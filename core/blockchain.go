@@ -1375,6 +1375,7 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 // is imported, but then new canon-head is added before the actual sidechain
 // completes, then the historic state could be pruned again
 func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool) (int, error) {
+	t := time.Now()
 	// If the chain is terminating, don't even bother starting up.
 	if bc.insertStopped() {
 		return 0, nil
@@ -1702,6 +1703,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 	}
 	stats.ignored += it.remaining()
 
+	log.Info("validate blocks use", "4444444444444444444444444444", time.Since(t))
 	return it.index, err
 }
 
